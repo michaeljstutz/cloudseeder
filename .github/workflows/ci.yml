@@ -41,8 +41,12 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Test
-        run: cargo test --all-targets --locked
+      - name: Test + coverage gate
+        # cargo-llvm-cov is pinned in .mise.toml. It builds instrumented test
+        # binaries, runs them, and fails the job if line coverage drops below
+        # the threshold. Raise the threshold here when coverage goes up; do not
+        # lower it without recording why.
+        run: cargo llvm-cov --all-targets --locked --summary-only --fail-under-lines 90
 
       - name: Build (release)
         run: cargo build --release --locked

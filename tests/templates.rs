@@ -309,6 +309,54 @@ async fn symlinked_template_dir_escaping_returns_404() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn leaf_path_that_is_a_directory_returns_500() {
+    let outer = tempfile::tempdir().unwrap();
+    let templates = outer.path().join("templates");
+    std::fs::create_dir(&templates).unwrap();
+    let tdir = templates.join("weird");
+    std::fs::create_dir(&tdir).unwrap();
+    // Leaf is a directory, not a regular file. canonicalize succeeds; read
+    // fails with EISDIR (non-NotFound) so the 500 path is exercised.
+    std::fs::create_dir(tdir.join("kickstart")).unwrap();
+
+    let server = spawn(templates, outer).await;
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/weird/kickstart",
+        server.addr
+    ))
+    .await
+    .expect("request");
+    assert_eq!(resp.status(), 500);
+
+    let _ = server.shutdown.send(());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn self_referencing_leaf_symlink_returns_500() {
+    let outer = tempfile::tempdir().unwrap();
+    let templates = outer.path().join("templates");
+    std::fs::create_dir(&templates).unwrap();
+    let tdir = templates.join("loopy");
+    std::fs::create_dir(&tdir).unwrap();
+    // kickstart -> kickstart (relative). canonicalize returns ELOOP, which is
+    // not NotFound, so the canonicalize-error 500 path is exercised.
+    std::os::unix::fs::symlink("kickstart", tdir.join("kickstart")).unwrap();
+
+    let server = spawn(templates, outer).await;
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/loopy/kickstart",
+        server.addr
+    ))
+    .await
+    .expect("request");
+    assert_eq!(resp.status(), 500);
+
+    let _ = server.shutdown.send(());
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn symlinked_template_dir_inside_root_still_works() {
     let outer = tempfile::tempdir().unwrap();
     let templates = outer.path().join("templates");

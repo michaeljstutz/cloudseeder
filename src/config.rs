@@ -256,6 +256,18 @@ mod tests {
         std::fs::write(&path, "this is = not valid toml [[\n").unwrap();
         let err = Settings::from_file(&path).unwrap_err();
         assert!(matches!(err, LoadError::Parse(_)), "got {err:?}");
+        assert!(err.to_string().starts_with("parsing config:"), "msg: {err}");
+    }
+
+    #[test]
+    fn from_file_returns_io_error_when_path_is_a_directory() {
+        // Passing a directory as the config path makes read_to_string fail with
+        // an Io error (EISDIR on Linux). Exercises both the Io error path and
+        // the Display impl for LoadError::Io.
+        let dir = tempfile::tempdir().unwrap();
+        let err = Settings::from_file(dir.path()).unwrap_err();
+        assert!(matches!(err, LoadError::Io(_)), "got {err:?}");
+        assert!(err.to_string().starts_with("reading config:"), "msg: {err}");
     }
 
     #[test]
@@ -298,6 +310,9 @@ mod tests {
             panic!("expected Addr, got {err:?}");
         };
         assert_eq!(raw, "not-a-socket-addr");
+        let msg = err.to_string();
+        assert!(msg.starts_with("invalid addr "), "msg: {msg}");
+        assert!(msg.contains("\"not-a-socket-addr\""), "msg: {msg}");
     }
 
     #[test]

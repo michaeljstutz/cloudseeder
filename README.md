@@ -226,7 +226,8 @@ Merging a Dependabot PR runs CI; if green, the change ships on the next release.
 ```bash
 cargo fmt --all -- --check                # formatting
 cargo clippy --all-targets -- -D warnings # lints
-cargo test --all-targets --locked         # tests (config unit + HTTP integration)
+cargo test --all-targets --locked         # tests (config unit + HTTP integration + CLI subprocess)
+cargo llvm-cov --all-targets --locked --summary-only  # line coverage (CI gates at 90%)
 ```
 
 **Workflows:**

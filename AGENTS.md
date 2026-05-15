@@ -65,16 +65,17 @@ Don't mutate state outside the working tree without being told to.
 - Toolchain: `mise install` (pinned in `.mise.toml`; first checkout needs `mise trust`)
 - Build: `cargo build` (release: `cargo build --release`)
 - Test: `cargo test --all-targets --locked`
+- Coverage gate: 90% line coverage (CI-enforced via `cargo llvm-cov`). Raise it as tests grow; never lower without recording why.
 - Lint: `cargo clippy --all-targets -- -D warnings`
 - Format check: `cargo fmt --all -- --check`
 - Run: `cargo run` (reads `./cloudseeder.toml` if present; defaults otherwise)
 
 ## Conventions
-- Config precedence: env > file > defaults. `--config <PATH>` or `CLOUDSEEDER_CONFIG` selects the file (default `./cloudseeder.toml`, optional). Env overrides for file fields are named `CLOUDSEEDER_<FIELD>` and currently include `CLOUDSEEDER_ADDR` and `CLOUDSEEDER_TEMPLATES_DIR`. Add more when a deployment need surfaces (containers, per-env switches); don't add them speculatively.
+- Config: `--config <PATH>` / `CLOUDSEEDER_CONFIG` selects the file (default `./cloudseeder.toml`, optional). Env overrides for file fields follow the `CLOUDSEEDER_<FIELD>` convention; add new ones for real deployment needs (Line 2 still applies).
 - CI uses SHA-pinned actions with `# vX.Y.Z` comments and digest-pinned Docker base images. Dependabot maintains both. New actions/base images must follow the same form.
 - Versioning: `Cargo.toml` carries the last released version. Bumps are made by the `release.yml` workflow only — never by hand. `publish-nightly` builds with a synthetic `<next-patch>-nightly.YYYYMMDD.<run>` version, mutating manifests in the runner only.
 - `prefix` is an **obscurity gate, not authentication**. The server is HTTP-only by design — do not add Basic Auth, bearer tokens, or query secrets. New public routes live under `/<prefix>/`. Don't change `/healthz`'s response shape; `HEALTHCHECK` and orchestrators depend on it.
-- Tests bind their own `TcpListener` and pass it to `serve_with_shutdown`; do not call `serve()` from tests — it installs process-wide signal handlers.
+- Tests bind their own `TcpListener` and pass it to `serve_with_shutdown`; do not call `serve()` from tests — it installs process-wide signal handlers. Use the subprocess pattern in `tests/cli.rs` if you need signal-path coverage.
 
 ## AI Artifacts
 Do not commit scratch notes, plans, drafts, or transcripts to the repository. Do not reference local scratch workspaces in any committed file, including source code, comments, docstrings, or documentation. Follow local artifact conventions if the developer's environment provides them; otherwise keep these out of the tree entirely.
