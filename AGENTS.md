@@ -70,7 +70,7 @@ Don't mutate state outside the working tree without being told to.
 - Run: `cargo run` (reads `./cloudseeder.toml` if present; defaults otherwise)
 
 ## Conventions
-- Config: `--config <PATH>` or `CLOUDSEEDER_CONFIG` selects the file (default `./cloudseeder.toml`, optional). Only `CLOUDSEEDER_ADDR` overrides a file field today; add more env overrides only when ops demands one.
+- Config precedence: env > file > defaults. `--config <PATH>` or `CLOUDSEEDER_CONFIG` selects the file (default `./cloudseeder.toml`, optional). Env overrides for file fields are named `CLOUDSEEDER_<FIELD>` and currently include `CLOUDSEEDER_ADDR` and `CLOUDSEEDER_TEMPLATES_DIR`. Add more when a deployment need surfaces (containers, per-env switches); don't add them speculatively.
 - CI uses SHA-pinned actions with `# vX.Y.Z` comments and digest-pinned Docker base images. Dependabot maintains both. New actions/base images must follow the same form.
 - Versioning: `Cargo.toml` carries the last released version. Bumps are made by the `release.yml` workflow only — never by hand. `publish-nightly` builds with a synthetic `<next-patch>-nightly.YYYYMMDD.<run>` version, mutating manifests in the runner only.
 - `prefix` is an **obscurity gate, not authentication**. The server is HTTP-only by design — do not add Basic Auth, bearer tokens, or query secrets. New public routes live under `/<prefix>/`. Don't change `/healthz`'s response shape; `HEALTHCHECK` and orchestrators depend on it.

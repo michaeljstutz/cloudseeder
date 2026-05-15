@@ -41,5 +41,5 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    cloudseeder::serve(settings.addr, &settings.prefix).await
+    cloudseeder::serve(settings.addr, &settings.prefix, settings.templates_dir).await
 }

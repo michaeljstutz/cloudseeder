@@ -2,7 +2,7 @@
 
 Dynamic template-based server for Ubuntu autoinstall and Red Hat kickstart configs.
 
-> **Status:** early bootstrap. The HTTP scaffold, config loader, and obscurity prefix are in place; template rendering for autoinstall/kickstart payloads is not yet implemented.
+> **Status:** early bootstrap. The HTTP scaffold, config loader, obscurity prefix, and static template serving are in place. Dynamic template rendering (variable substitution) is not yet implemented — templates are served as static files for now.
 
 ## Quick start
 
@@ -33,13 +33,37 @@ cloudseeder --config ./my.toml
 
 ## Routes
 
-| Path                | Status | Notes                                    |
-|---------------------|--------|------------------------------------------|
-| `GET /healthz`      | 200    | `{"status":"ok"}` — liveness probe       |
-| `GET /<prefix>/`    | 200    | Empty body (placeholder for served data) |
-| anything else       | 401    | Including `/<prefix>` without trailing `/` |
+| Path                                       | Status   | Notes                                                          |
+|--------------------------------------------|----------|----------------------------------------------------------------|
+| `GET /healthz`                             | 200      | `{"status":"ok"}` — liveness probe                             |
+| `GET /<prefix>/`                           | 200      | Empty body (placeholder for served data)                       |
+| `GET /<prefix>/<template>/`                | 200/404  | HTML index of the template's three files (404 if no folder)    |
+| `GET /<prefix>/<template>/kickstart`       | 200/404  | Red Hat kickstart file (200 empty if file absent, 404 if no folder) |
+| `GET /<prefix>/<template>/user-data`       | 200/404  | Ubuntu autoinstall / cloud-init user-data (same rules)         |
+| `GET /<prefix>/<template>/meta-data`       | 200/404  | cloud-init meta-data (same rules)                              |
+| anything else                              | 401      | Including `/<prefix>` without trailing `/`                     |
 
 The prefix exists for "security through obscurity" — it does not authenticate. `/healthz` is intentionally unguarded so orchestrators and the Docker `HEALTHCHECK` can probe without knowing the prefix.
+
+Template names must match `[a-z0-9-]+`. Anything else (uppercase, underscores, dots, slashes) returns 404.
+
+## Templates
+
+Each template is a folder under the configured `templates_dir` containing up to three files:
+
+```
+templates/
+└── ubuntu-24-04/
+    ├── kickstart        (optional)
+    ├── user-data        (optional)
+    └── meta-data        (optional)
+```
+
+Requests for a file that doesn't exist inside an existing template folder return 200 with an empty body — provisioners (Ubuntu autoinstall, cloud-init) often require all three files even when the contents are empty, so this avoids surprise breakage. Requests for a *template* that doesn't exist return 404.
+
+A worked example lives in [`examples/templates/example/`](./examples/templates/example) — point `templates_dir` at `examples/templates` and visit `/<prefix>/example/` to see the index.
+
+Files are served as `text/plain; charset=utf-8`. The index page at `/<prefix>/<template>/` is minimal HTML with three relative links — useful for confirming the server can see the template folder.
 
 ## Security posture
 
@@ -62,20 +86,22 @@ The prefix exists for "security through obscurity" — it does not authenticate.
 
 ```toml
 # cloudseeder.toml
-addr   = "127.0.0.1:8080"   # listen address; env CLOUDSEEDER_ADDR overrides this field
-prefix = "demo01"            # [a-z0-9]; if missing/empty, auto-generated each run
+addr          = "127.0.0.1:8080"   # listen address; env CLOUDSEEDER_ADDR overrides
+prefix        = "demo01"           # [a-z0-9]; if missing/empty, auto-generated each run
+templates_dir = "./templates"      # folder containing per-template subfolders; env CLOUDSEEDER_TEMPLATES_DIR overrides
 ```
 
 **Precedence** (highest wins):
 
-| Source                                          | Affects               |
-|-------------------------------------------------|-----------------------|
-| `--config <PATH>` flag / `CLOUDSEEDER_CONFIG`   | chooses *which* file to load |
-| `CLOUDSEEDER_ADDR` env var                      | overrides `addr` only |
-| `cloudseeder.toml` fields                       | any field             |
-| built-in defaults                               | fallback              |
+| Source                                          | Affects                                |
+|-------------------------------------------------|----------------------------------------|
+| `--config <PATH>` flag / `CLOUDSEEDER_CONFIG`   | chooses *which* file to load           |
+| `CLOUDSEEDER_ADDR` env var                      | overrides `addr`                       |
+| `CLOUDSEEDER_TEMPLATES_DIR` env var             | overrides `templates_dir`              |
+| `cloudseeder.toml` fields                       | any field                              |
+| built-in defaults                               | fallback                               |
 
-Only `addr` has an env-var override today. Other fields come from file or default — adding more env overrides is a deliberate decision, not the path of least resistance.
+Env overrides for file fields follow the `CLOUDSEEDER_<FIELD>` convention. New overrides are added when a deployment need surfaces (containers, per-env switches) — not speculatively.
 
 `RUST_LOG` follows the standard `tracing` env filter (default `info`).
 
@@ -112,6 +138,16 @@ docker run --rm -p 8080:8080 \
   ghcr.io/michaeljstutz/cloudseeder:latest \
   --config /etc/cloudseeder.toml
 ```
+
+To serve templates from the host (edit them live, no rebuild):
+
+```bash
+docker run --rm -p 8080:8080 \
+  -v "$PWD/templates:/etc/cloudseeder/templates:ro" \
+  ghcr.io/michaeljstutz/cloudseeder:latest
+```
+
+The container's WORKDIR is `/etc/cloudseeder`, so the in-binary default `templates_dir = "./templates"` resolves to `/etc/cloudseeder/templates`. Mount your host directory there and the server picks it up — no config-file mount needed for the templates case. Use `:ro` if you don't want the container to be able to modify the files (it won't, but defense in depth costs nothing).
 
 **Build it locally:**
 

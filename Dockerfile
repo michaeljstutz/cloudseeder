@@ -18,6 +18,12 @@ RUN apt-get update \
 
 COPY --from=builder /usr/local/bin/cloudseeder /usr/local/bin/cloudseeder
 
+# Runtime WORKDIR doubles as the default templates root: the in-binary default
+# `templates_dir = "./templates"` resolves to `/etc/cloudseeder/templates`.
+# Mount your templates here:
+#   docker run -v "$PWD/templates:/etc/cloudseeder/templates:ro" ...
+WORKDIR /etc/cloudseeder
+
 USER cloudseeder
 ENV CLOUDSEEDER_ADDR=0.0.0.0:8080
 EXPOSE 8080

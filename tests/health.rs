@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tokio::sync::oneshot;
 
 const TEST_PREFIX: &str = "test01";
@@ -10,8 +11,9 @@ async fn spawn_test_server() -> (SocketAddr, oneshot::Sender<()>) {
     let addr = listener.local_addr().expect("local addr");
     let (tx, rx) = oneshot::channel::<()>();
 
+    let templates_dir = PathBuf::from("./templates-does-not-exist");
     tokio::spawn(async move {
-        cloudseeder::serve_with_shutdown(listener, TEST_PREFIX, async {
+        cloudseeder::serve_with_shutdown(listener, TEST_PREFIX, templates_dir, async {
             let _ = rx.await;
         })
         .await
@@ -85,8 +87,9 @@ async fn server_stops_on_shutdown_signal() {
         .expect("bind");
     let (tx, rx) = oneshot::channel::<()>();
 
+    let templates_dir = PathBuf::from("./templates-does-not-exist");
     let handle = tokio::spawn(async move {
-        cloudseeder::serve_with_shutdown(listener, TEST_PREFIX, async {
+        cloudseeder::serve_with_shutdown(listener, TEST_PREFIX, templates_dir, async {
             let _ = rx.await;
         })
         .await

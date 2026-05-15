@@ -1,18 +1,37 @@
 use axum::{http::StatusCode, response::IntoResponse, routing::get, Json, Router};
 use serde_json::json;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tokio::signal;
 
 pub mod config;
+pub mod templates;
 
 pub use config::{LoadError, PrefixSource, Settings};
 
-pub fn app(prefix: &str) -> Router {
+pub fn app(prefix: &str, templates_dir: PathBuf) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route(&format!("/{prefix}/"), get(prefix_root))
+        .route(
+            &format!("/{prefix}/:template/"),
+            get(templates::template_index),
+        )
+        .route(
+            &format!("/{prefix}/:template/kickstart"),
+            get(templates::serve_kickstart),
+        )
+        .route(
+            &format!("/{prefix}/:template/user-data"),
+            get(templates::serve_user_data),
+        )
+        .route(
+            &format!("/{prefix}/:template/meta-data"),
+            get(templates::serve_meta_data),
+        )
         .fallback(unauthorized)
+        .with_state(templates_dir)
 }
 
 async fn healthz() -> Json<serde_json::Value> {
@@ -27,14 +46,15 @@ async fn unauthorized() -> impl IntoResponse {
     (StatusCode::UNAUTHORIZED, "")
 }
 
-pub async fn serve(addr: SocketAddr, prefix: &str) -> std::io::Result<()> {
+pub async fn serve(addr: SocketAddr, prefix: &str, templates_dir: PathBuf) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr).await?;
-    serve_with_shutdown(listener, prefix, shutdown_signal()).await
+    serve_with_shutdown(listener, prefix, templates_dir, shutdown_signal()).await
 }
 
 pub async fn serve_with_shutdown<F>(
     listener: TcpListener,
     prefix: &str,
+    templates_dir: PathBuf,
     shutdown: F,
 ) -> std::io::Result<()>
 where
@@ -42,7 +62,7 @@ where
 {
     let bound = listener.local_addr()?;
     tracing::info!(%bound, "cloudseeder listening");
-    axum::serve(listener, app(prefix))
+    axum::serve(listener, app(prefix, templates_dir))
         .with_graceful_shutdown(shutdown)
         .await
 }
