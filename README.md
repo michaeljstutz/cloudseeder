@@ -111,6 +111,39 @@ Invalid prefixes are rejected at startup with the offending characters listed:
 cloudseeder: invalid prefix "BAD-prefix!": only [a-z0-9] allowed (invalid: '!', '-', 'A', 'B', 'D')
 ```
 
+## Download a binary
+
+Standalone binaries are attached to each release. No runtime dependencies beyond glibc (Linux) or the system libc (macOS).
+
+| Archive                                                       | For                                          |
+|---------------------------------------------------------------|----------------------------------------------|
+| `cloudseeder-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`          | Intel/AMD Linux (servers, dev VMs)           |
+| `cloudseeder-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz`         | ARM Linux (AWS Graviton, Raspberry Pi)       |
+| `cloudseeder-vX.Y.Z-aarch64-apple-darwin.tar.gz`              | Apple Silicon Mac (M1, M2, M3, ...)          |
+| `cloudseeder-vX.Y.Z-x86_64-apple-darwin.tar.gz`               | Intel Mac                                    |
+
+Each release also ships a `SHA256SUMS` file. Verify before extracting:
+
+```bash
+VERSION=vX.Y.Z
+TARGET=aarch64-apple-darwin
+ARCHIVE="cloudseeder-${VERSION}-${TARGET}.tar.gz"
+BASE="https://github.com/michaeljstutz/cloudseeder/releases/download/${VERSION}"
+
+curl -LO "${BASE}/${ARCHIVE}"
+curl -LO "${BASE}/SHA256SUMS"
+shasum -a 256 -c SHA256SUMS --ignore-missing
+
+tar xzf "${ARCHIVE}"
+./cloudseeder --version
+```
+
+**macOS first-run note.** Binaries are unsigned (no Apple Developer Program subscription). Gatekeeper will refuse the first launch with *"cannot be opened because the developer cannot be verified"*. Clear the quarantine attribute once:
+
+```bash
+xattr -d com.apple.quarantine ./cloudseeder
+```
+
 ## Docker
 
 **Pull a published image:**
@@ -162,8 +195,8 @@ The image runs as a non-root user, exposes `8080`, and ships a `HEALTHCHECK` tha
 
 Two streams ship from this repo:
 
-- **Stable releases** — cut manually from the **Release** workflow. Each is a SemVer tag (`vX.Y.Z`), a `release: vX.Y.Z` commit on `main`, a GHCR image, and a GitHub Release with auto-generated notes.
-- **Nightlies** — published automatically on every merge to `main` as a SemVer pre-release version (`0.0.1-nightly.20260513.47`), so users on Dependabot delay or those chasing a recent fix can opt into bleeding-edge without losing version traceability.
+- **Stable releases** — cut manually from the **Release** workflow. Each is a SemVer tag (`vX.Y.Z`), a `release: vX.Y.Z` commit on `main`, four standalone binaries (Linux x86_64/arm64, macOS x86_64/arm64) with a `SHA256SUMS` file, a multi-arch (`linux/amd64`, `linux/arm64`) GHCR image, and a GitHub Release with auto-generated notes.
+- **Nightlies** — published automatically on every merge to `main` as a SemVer pre-release version (`0.0.1-nightly.20260513.47`), so users on Dependabot delay or those chasing a recent fix can opt into bleeding-edge without losing version traceability. Nightlies publish the multi-arch image only (no standalone binaries).
 
 ### Cutting a release
 
@@ -174,7 +207,8 @@ Two streams ship from this repo:
 What the workflow does, in order:
 
 1. A read-only **verify** job installs Rust, bumps the version in `Cargo.toml`/`Cargo.lock`, runs `cargo build --release --locked` and `cargo test --all-targets --locked`. It carries no write tokens, so a compromised build dependency cannot push code or images.
-2. A separate **publish** job picks up the bumped manifests, commits `release: vX.Y.Z` to `main`, tags `vX.Y.Z`, and pushes both. It builds the release image, publishes it to GHCR with `:vX.Y.Z`, `:latest`, and `:nightly`, then creates a GitHub Release with auto-generated notes.
+2. A **build** matrix job produces the four standalone binaries (Linux x86_64/arm64 on native runners, macOS x86_64/arm64 on Apple Silicon runners with cross-compile for Intel). Each target tars the binary plus `LICENSE` and uploads the archive as a workflow artifact.
+3. A separate **publish** job downloads the bumped manifests and all four binary archives, generates a combined `SHA256SUMS` file, commits `release: vX.Y.Z` to `main`, tags `vX.Y.Z`, and pushes both. It builds the multi-arch image (linux/amd64 + linux/arm64 via QEMU), publishes it to GHCR with `:vX.Y.Z`, `:latest`, and `:nightly`, then creates a GitHub Release with auto-generated notes and the four archives plus `SHA256SUMS` attached.
 
 **Concurrency:** the Release workflow serializes itself — a second dispatch waits for the first to finish rather than racing it.
 
@@ -190,6 +224,8 @@ On every push to `main`, after `test` and `docker` jobs pass, the `publish-night
 A release immediately overwrites `:nightly` so it never lags behind. (The release commit doesn't itself trigger CI — `GITHUB_TOKEN` pushes don't trigger workflows by default.)
 
 ### Image tag scheme
+
+All published images are multi-arch (`linux/amd64`, `linux/arm64`). Docker picks the right manifest for your host automatically.
 
 | Tag                                    | Source                       | Use it for                                       |
 |----------------------------------------|------------------------------|--------------------------------------------------|

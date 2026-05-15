@@ -85,9 +85,73 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build:
+    name: build ${{ matrix.target }}
+    needs: verify
+    # Don't kill the other targets if one fails — we want to see all failures at once.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            # Apple Silicon runner cross-compiles to x86_64 via `rustup target add`.
+            # Avoids the deprecating Intel macos-13 runner label.
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Install mise
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac  # v2.4.4
+        with:
+          install: true
+          cache: true
+
+      - name: Apply bumped manifests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: bumped-manifests
+          path: .
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Archive binary + LICENSE
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          ARCHIVE="cloudseeder-v${VERSION}-${TARGET}.tar.gz"
+          mkdir -p staging
+          cp "target/${TARGET}/release/cloudseeder" staging/
+          cp LICENSE staging/
+          tar -C staging -czf "${ARCHIVE}" cloudseeder LICENSE
+          ls -l "${ARCHIVE}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: bin-${{ matrix.target }}
+          path: cloudseeder-*.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: tag and publish
-    needs: verify
+    needs: [verify, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -102,6 +166,25 @@ jobs:
         with:
           name: bumped-manifests
           path: .
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          pattern: bin-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          # Combined checksums in the standard `shasum -c` / `sha256sum -c` format.
+          # Single file per release keeps verification ergonomic for downloaders.
+          shasum -a 256 *.tar.gz > SHA256SUMS
+          echo "Release assets:"
+          ls -l
+          echo
+          echo "SHA256SUMS:"
+          cat SHA256SUMS
 
       - name: Verify manifests landed
         run: |
@@ -125,6 +208,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
 
+      - name: Set up QEMU
+        # Emulates arm64 on the x86_64 runner so buildx can produce both archs.
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4.0.0
+        with:
+          platforms: arm64
+
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
@@ -144,18 +233,23 @@ jobs:
             type=raw,value=latest
             type=raw,value=nightly
 
-      - name: Build and push release image
+      - name: Build and push release image (multi-arch)
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release with binaries and checksums
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.verify.outputs.tag }}
-        run: gh release create "$TAG" --title "$TAG" --generate-notes
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            dist/*.tar.gz dist/SHA256SUMS
