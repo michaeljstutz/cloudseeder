@@ -1,0 +1,12 @@
+#cloud-config
+# Placeholder Ubuntu autoinstall user-data for the "example" template.
+# Replace with a real autoinstall config.
+# See: https://canonical-subiquity.readthedocs-hosted.com/en/latest/reference/autoinstall-reference.html
+autoinstall:
+  version: 1
+  identity:
+    hostname: example
+    username: ubuntu
+    password: "$6$rounds=4096$saltsalt$replaceMeWithARealHash"
+  ssh:
+    install-server: true
