@@ -140,9 +140,9 @@ fn resolve(
 }
 
 fn generate_prefix() -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..PREFIX_LEN)
-        .map(|_| PREFIX_CHARSET[rng.gen_range(0..PREFIX_CHARSET.len())] as char)
+        .map(|_| PREFIX_CHARSET[rng.random_range(0..PREFIX_CHARSET.len())] as char)
         .collect()
 }
 

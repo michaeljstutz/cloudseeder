@@ -15,19 +15,19 @@ pub fn app(prefix: &str, templates_dir: PathBuf) -> Router {
         .route("/healthz", get(healthz))
         .route(&format!("/{prefix}/"), get(prefix_root))
         .route(
-            &format!("/{prefix}/:template/"),
+            &format!("/{prefix}/{{template}}/"),
             get(templates::template_index),
         )
         .route(
-            &format!("/{prefix}/:template/kickstart"),
+            &format!("/{prefix}/{{template}}/kickstart"),
             get(templates::serve_kickstart),
         )
         .route(
-            &format!("/{prefix}/:template/user-data"),
+            &format!("/{prefix}/{{template}}/user-data"),
             get(templates::serve_user_data),
         )
         .route(
-            &format!("/{prefix}/:template/meta-data"),
+            &format!("/{prefix}/{{template}}/meta-data"),
             get(templates::serve_meta_data),
         )
         .fallback(unauthorized)
