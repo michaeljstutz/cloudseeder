@@ -117,8 +117,12 @@ jobs:
           DATE=$(date -u +%Y%m%d)
           NIGHTLY_VERSION="${NEXT_PATCH}-nightly.${DATE}.${GITHUB_RUN_NUMBER}"
           cargo set-version "$NIGHTLY_VERSION"
+          # version stays plain SemVer (Cargo rejects a `v` prefix); tag carries
+          # the `v` so nightly image tags match release's `:vX.Y.Z`. Mirrors the
+          # version/tag split in release.yml's bump step.
           echo "version=$NIGHTLY_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building nightly: $NIGHTLY_VERSION"
+          echo "tag=v$NIGHTLY_VERSION"     >> "$GITHUB_OUTPUT"
+          echo "Building nightly: v$NIGHTLY_VERSION"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
@@ -142,7 +146,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
           tags: |
-            type=raw,value=${{ steps.nightly.outputs.version }}
+            type=raw,value=${{ steps.nightly.outputs.tag }}
             type=raw,value=nightly
             type=sha,prefix=sha-,format=short
 

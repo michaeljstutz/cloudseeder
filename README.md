@@ -154,7 +154,7 @@ xattr -d com.apple.quarantine ./cloudseeder
 docker pull ghcr.io/michaeljstutz/cloudseeder:latest                       # most recent stable release
 docker pull ghcr.io/michaeljstutz/cloudseeder:v0.0.1                       # specific release
 docker pull ghcr.io/michaeljstutz/cloudseeder:nightly                      # latest main-branch nightly
-docker pull ghcr.io/michaeljstutz/cloudseeder:0.0.1-nightly.20260513.47    # specific nightly build
+docker pull ghcr.io/michaeljstutz/cloudseeder:v0.0.1-nightly.20260513.47   # specific nightly build
 ```
 
 See [Releases & distribution](#releases--distribution) for the full tag scheme.
@@ -234,7 +234,7 @@ All published images are multi-arch (`linux/amd64`, `linux/arm64`). Docker picks
 | `:vX.Y.Z`                              | Release workflow             | pinned production deployments                    |
 | `:latest`                              | Release workflow             | latest stable release                            |
 | `:nightly`                             | Nightly + Release            | rolling latest from `main` (resets each release) |
-| `:X.Y.Z-nightly.YYYYMMDD.N`            | Nightly                      | pinning a specific nightly build                 |
+| `:vX.Y.Z-nightly.YYYYMMDD.N`           | Nightly                      | pinning a specific nightly build                 |
 | `:sha-abc1234`                         | Nightly                      | bisecting a specific commit on `main`            |
 
 ### Version roadmap
