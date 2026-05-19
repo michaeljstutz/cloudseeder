@@ -59,6 +59,12 @@ jobs:
 
   docker:
     name: docker build
+    # PR-only amd64 smoke build: proves the Dockerfile still builds, fast (native,
+    # no QEMU). arm64 is built and pushed at merge by publish-nightly, which runs
+    # the full multi-arch build. Emulating a full Rust release compile for arm64
+    # under QEMU here costs ~15 min/commit and is not worth it per PR push; the
+    # tradeoff is that an arm64-only Dockerfile/base-image break surfaces at merge.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -66,18 +72,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
 
-      - name: Set up QEMU
-        # PR smoke builds both archs so arm64 Dockerfile / base-image issues surface
-        # at PR time, not after merge when nightly tries to publish multi-arch.
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4.0.0
-        with:
-          platforms: arm64
-
-      - name: Build image (multi-arch, no push)
+      - name: Build image (amd64, no push)
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: false
           tags: cloudseeder:ci
           cache-from: type=gha
@@ -85,7 +84,9 @@ jobs:
 
   publish-nightly:
     name: publish nightly image
-    needs: [test, docker]
+    # docker is PR-only and skipped on main, so depend on test only. The full
+    # multi-arch (amd64+arm64) build happens in this job's own build+push step.
+    needs: [test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
