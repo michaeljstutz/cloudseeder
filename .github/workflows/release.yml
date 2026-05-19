@@ -179,7 +179,7 @@ jobs:
           cd dist
           # Combined checksums in the standard `shasum -c` / `sha256sum -c` format.
           # Single file per release keeps verification ergonomic for downloaders.
-          shasum -a 256 *.tar.gz > SHA256SUMS
+          shasum -a 256 -- *.tar.gz > SHA256SUMS
           echo "Release assets:"
           ls -l
           echo
