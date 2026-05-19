@@ -80,6 +80,8 @@ Files are served as `text/plain; charset=utf-8`. The index page at `/<prefix>/<t
 - Default to `127.0.0.1`; bind `0.0.0.0` only when needed, and prefer an isolated provisioning network (VLAN, dedicated bridge, firewall rules) over an internet-facing host.
 - Do not serve any content from cloudseeder that you would not be comfortable publishing — no passwords, no API tokens, no SSH keys you wouldn't paste into a public gist. Use post-install hooks or a separate secret-delivery mechanism for anything sensitive.
 
+To report a vulnerability, see [SECURITY.md](./SECURITY.md). The bullets above are deliberate design decisions, not vulnerabilities — that distinction is spelled out there.
+
 ## Configuration
 
 `cloudseeder.toml` is optional. Without it, built-in defaults apply.
@@ -237,8 +239,8 @@ All published images are multi-arch (`linux/amd64`, `linux/arm64`). Docker picks
 
 ### Version roadmap
 
-- **`0.0.x`** — foundational / bootstrap. HTTP scaffold, config loader, prefix gate, CI/CD plumbing. (Current.)
-- **`0.1.0`** — first functional milestone: serving a real autoinstall or kickstart template.
+- **`0.0.x`** — foundational / bootstrap. HTTP scaffold, config loader, prefix gate, CI/CD plumbing, and static template serving (files served as-is). (Current.)
+- **`0.1.0`** — first *dynamic* milestone: template rendering with variable substitution, so a template can be parameterized per request rather than served verbatim.
 - **`0.x.y`** — growing the feature set: URL conventions, structured logging, webhooks, callbacks to remote services.
 - **`1.0.0`** — API stability claim once the operational shape has settled.
 
@@ -257,6 +259,10 @@ Both workflows declare their own `permissions:` blocks, so the default repo Work
 
 Merging a Dependabot PR runs CI; if green, the change ships on the next release.
 
+**Not covered by Dependabot:** the tool versions pinned in `.mise.toml` (`rust`, `cargo-llvm-cov`, `actionlint`). Dependabot cannot parse `.mise.toml`, so these are bumped by hand — run `mise outdated` periodically to see what's behind.
+
+**`cargo audit`** runs in a separate workflow (`.github/workflows/audit.yml`) on every PR, every push to `main`, and on a weekly schedule. The schedule matters: it surfaces RustSec advisories published against dependencies that have not changed, which a push-only trigger would miss until the next code change.
+
 ## Development
 
 ```bash
@@ -264,11 +270,14 @@ cargo fmt --all -- --check                # formatting
 cargo clippy --all-targets -- -D warnings # lints
 cargo test --all-targets --locked         # tests (config unit + HTTP integration + CLI subprocess)
 cargo llvm-cov --all-targets --locked --summary-only  # line coverage (CI gates at 90%)
+cargo audit                               # RustSec advisory scan (also a CI workflow)
+actionlint                                # GitHub Actions workflow lint
 ```
 
 **Workflows:**
 
-- `.github/workflows/ci.yml` — runs fmt/clippy/test + a Docker build smoke check on every PR and every push to `main`. On `main`, after both pass, a `publish-nightly` job pushes `:main` and `:sha-<short>` images to GHCR.
+- `.github/workflows/ci.yml` — on every PR and every push to `main`: fmt, clippy, actionlint, the 90% coverage gate, a release build, and a multi-arch Docker build smoke check. On `main`, after `test` and `docker` pass, `publish-nightly` pushes `:nightly` and `:sha-<short>` images to GHCR.
+- `.github/workflows/audit.yml` — `cargo audit` on every PR, every push to `main`, and weekly.
 - `.github/workflows/release.yml` — manual `workflow_dispatch` from the Actions tab. See [Releases & distribution](#releases--distribution).
 
 All third-party actions are SHA-pinned with `# vX.Y.Z` comments; the Docker base images are pinned by digest. Dependabot maintains both — see [Repository setup](#repository-setup-one-time).

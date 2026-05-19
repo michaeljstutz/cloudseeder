@@ -2,6 +2,7 @@
 name = "cloudseeder"
 version = "0.0.0"
 edition = "2021"
+authors = ["Michael Stutz <michaeljstutz@users.noreply.github.com>"]
 description = "Dynamic template-based server for Ubuntu autoinstall and Red Hat kickstart configs."
 license = "MIT"
 repository = "https://github.com/michaeljstutz/cloudseeder"
