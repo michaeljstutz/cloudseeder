@@ -137,6 +137,179 @@ async fn serves_each_file_when_present() {
 }
 
 #[tokio::test]
+async fn renders_query_vars_in_template_files() {
+    let server = server_with_templates().await;
+    write_template_file(
+        &server,
+        "ubuntu",
+        "user-data",
+        "hostname: {{h}}\ninstance-id: {{id}}\nmissing: {{missing}}\n",
+    );
+
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/user-data?h=node1.example&id=10",
+        server.addr
+    ))
+    .await
+    .expect("request");
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.text().await.expect("body"),
+        "hostname: node1.example\ninstance-id: 10\nmissing: {{missing}}\n"
+    );
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
+async fn renders_path_vars_for_autoinstall_file_urls() {
+    let server = server_with_templates().await;
+    write_template_file(&server, "ubuntu", "user-data", "hostname: {{h}}\n");
+    write_template_file(&server, "ubuntu", "meta-data", "instance-id: {{id}}\n");
+
+    let user_data = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/h=node1.example;id=10/user-data",
+        server.addr
+    ))
+    .await
+    .expect("request");
+    assert_eq!(user_data.status(), 200);
+    assert_eq!(
+        user_data.text().await.expect("body"),
+        "hostname: node1.example\n"
+    );
+
+    let meta_data = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/h=node1.example;id=10/meta-data",
+        server.addr
+    ))
+    .await
+    .expect("request");
+    assert_eq!(meta_data.status(), 200);
+    assert_eq!(meta_data.text().await.expect("body"), "instance-id: 10\n");
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
+async fn rejects_invalid_template_var_names() {
+    let server = server_with_templates().await;
+    write_template_file(&server, "ubuntu", "user-data", "hostname: {{host_name}}\n");
+
+    let query_resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/user-data?host_name=node1",
+        server.addr
+    ))
+    .await
+    .expect("request");
+    assert_eq!(query_resp.status(), 404);
+
+    let path_resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/host_name=node1/user-data",
+        server.addr
+    ))
+    .await
+    .expect("request");
+    assert_eq!(path_resp.status(), 404);
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
+async fn empty_var_value_renders_empty_string() {
+    let server = server_with_templates().await;
+    write_template_file(
+        &server,
+        "ubuntu",
+        "user-data",
+        "hostname: {{h}}\nid: {{id}}\n",
+    );
+
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/user-data?h=&id=10",
+        server.addr
+    ))
+    .await
+    .expect("request");
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.text().await.expect("body"), "hostname: \nid: 10\n");
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
+async fn rejects_path_vars_without_equals() {
+    let server = server_with_templates().await;
+    write_template_file(&server, "ubuntu", "user-data", "hostname: {{h}}\n");
+
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/garbage/user-data",
+        server.addr
+    ))
+    .await
+    .expect("request");
+
+    assert_eq!(resp.status(), 404);
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
+async fn rejects_newline_var_values() {
+    let server = server_with_templates().await;
+    write_template_file(&server, "ubuntu", "user-data", "hostname: {{h}}\n");
+
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/user-data?h=node1%0Aruncmd:%20[echo%20hi]",
+        server.addr
+    ))
+    .await
+    .expect("request");
+
+    assert_eq!(resp.status(), 404);
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
+async fn query_vars_override_path_vars() {
+    let server = server_with_templates().await;
+    write_template_file(&server, "ubuntu", "user-data", "hostname: {{h}}\n");
+
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/h=path/user-data?h=query",
+        server.addr
+    ))
+    .await
+    .expect("request");
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.text().await.expect("body"), "hostname: query\n");
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
+async fn values_containing_placeholders_are_not_rendered_again() {
+    let server = server_with_templates().await;
+    write_template_file(&server, "ubuntu", "user-data", "{{h}}\n");
+
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/user-data?h={{{{id}}}}&id=foo",
+        server.addr
+    ))
+    .await
+    .expect("request");
+
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.text().await.expect("body"), "{{id}}\n");
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
 async fn index_returns_html_with_three_links() {
     let server = server_with_templates().await;
     make_template_dir(&server, "rhel9");

@@ -1,0 +1,21 @@
+# Placeholder kickstart file for the "vars" template.
+# Replace with a real Red Hat / RHEL-family kickstart config.
+# See: https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/automatically_installing_rhel/
+text
+lang en_US.UTF-8
+keyboard us
+timezone UTC --utc
+network --hostname="{{h}}"
+# Root is locked by default in this placeholder. Choose ONE of these before
+# deploying — DO NOT ship a plaintext password to a real host.
+#   rootpw --iscrypted '$6$...'   # preferred; generate the hash interactively
+#                                 # (prompts twice, no echo, no shell history):
+#                                 #     openssl passwd -6
+#   rootpw --plaintext <pw>       # plaintext, NEVER in production
+rootpw --lock
+clearpart --all --initlabel
+autopart
+reboot
+%packages
+@^minimal-environment
+%end

@@ -23,12 +23,24 @@ pub fn app(prefix: &str, templates_dir: PathBuf) -> Router {
             get(templates::serve_kickstart),
         )
         .route(
+            &format!("/{prefix}/{{template}}/{{vars}}/kickstart"),
+            get(templates::serve_kickstart_with_vars),
+        )
+        .route(
             &format!("/{prefix}/{{template}}/user-data"),
             get(templates::serve_user_data),
         )
         .route(
+            &format!("/{prefix}/{{template}}/{{vars}}/user-data"),
+            get(templates::serve_user_data_with_vars),
+        )
+        .route(
             &format!("/{prefix}/{{template}}/meta-data"),
             get(templates::serve_meta_data),
+        )
+        .route(
+            &format!("/{prefix}/{{template}}/{{vars}}/meta-data"),
+            get(templates::serve_meta_data_with_vars),
         )
         .fallback(unauthorized)
         .with_state(templates_dir)
