@@ -2,7 +2,7 @@
 
 Dynamic template-based server for Ubuntu autoinstall and Red Hat kickstart configs.
 
-> **Status:** early bootstrap. The HTTP scaffold, config loader, obscurity prefix, and static template serving are in place. Dynamic template rendering (variable substitution) is not yet implemented — templates are served as static files for now.
+> **Status:** early bootstrap. The HTTP scaffold, config loader, obscurity prefix, static template serving, and simple request variable substitution are in place.
 
 ## Quick start
 
@@ -41,6 +41,7 @@ cloudseeder --config ./my.toml
 | `GET /<prefix>/<template>/kickstart`       | 200/404  | Red Hat kickstart file (200 empty if file absent, 404 if no folder) |
 | `GET /<prefix>/<template>/user-data`       | 200/404  | Ubuntu autoinstall / cloud-init user-data (same rules)         |
 | `GET /<prefix>/<template>/meta-data`       | 200/404  | cloud-init meta-data (same rules)                              |
+| `GET /<prefix>/<template>/<vars>/<file>`   | 200/404  | Same three files with path vars like `h=node1;id=10`           |
 | anything else                              | 401      | Including `/<prefix>` without trailing `/`                     |
 
 The prefix exists for "security through obscurity" — it does not authenticate. `/healthz` is intentionally unguarded so orchestrators and the Docker `HEALTHCHECK` can probe without knowing the prefix.
@@ -64,6 +65,38 @@ Requests for a file that doesn't exist inside an existing template folder return
 A worked example lives in [`examples/templates/example/`](./examples/templates/example) — point `templates_dir` at `examples/templates` and visit `/<prefix>/example/` to see the index.
 
 Files are served as `text/plain; charset=utf-8`. The index page at `/<prefix>/<template>/` is minimal HTML with three relative links — useful for confirming the server can see the template folder.
+
+### Template variables
+
+Template files can include simple placeholders:
+
+```text
+hostname: {{h}}
+instance-id: {{id}}
+```
+
+Pass values as query parameters:
+
+```text
+/<prefix>/ubuntu/user-data?h=node1.example&id=10
+```
+
+Or pass them as a path segment before the file name:
+
+```text
+/<prefix>/ubuntu/h=node1.example;id=10/user-data
+/<prefix>/ubuntu/h=node1.example;id=10/meta-data
+```
+
+The path form is useful for Ubuntu autoinstall seed URLs because you can give the installer this root:
+
+```text
+http://server:8080/<prefix>/ubuntu/h=node1.example;id=10/
+```
+
+and it will request `user-data` and `meta-data` under that URL. Variable names must match `[a-z0-9-]+`; unknown placeholders are left unchanged. If both URL forms supply the same name, the query parameter wins.
+
+Variable values are inserted verbatim. They are not YAML-, shell-, or cloud-config-escaped, and values containing ASCII control characters such as encoded newlines (`%0A`), carriage returns (`%0D`), or tabs (`%09`) are rejected. Operators who need structural safety beyond that should validate request values before they reach cloudseeder, for example with fixed provisioning URLs, trusted networks, or a fronting proxy that rejects unsafe input.
 
 ## Security posture
 
@@ -239,8 +272,8 @@ All published images are multi-arch (`linux/amd64`, `linux/arm64`). Docker picks
 
 ### Version roadmap
 
-- **`0.0.x`** — foundational / bootstrap. HTTP scaffold, config loader, prefix gate, CI/CD plumbing, and static template serving (files served as-is). (Current.)
-- **`0.1.0`** — first *dynamic* milestone: template rendering with variable substitution, so a template can be parameterized per request rather than served verbatim.
+- **`0.0.x`** — foundational / bootstrap. HTTP scaffold, config loader, prefix gate, CI/CD plumbing, static template serving, and simple request variable substitution. (Current.)
+- **`0.1.0`** — next dynamic milestone: harden the template rendering API once real provisioning workflows shake out the URL and variable conventions.
 - **`0.x.y`** — growing the feature set: URL conventions, structured logging, webhooks, callbacks to remote services.
 - **`1.0.0`** — API stability claim once the operational shape has settled.
 

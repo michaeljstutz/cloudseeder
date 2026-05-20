@@ -1,8 +1,9 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
 };
+use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
 
 pub const FILES: [&str; 3] = ["kickstart", "user-data", "meta-data"];
@@ -12,6 +13,17 @@ pub fn is_valid_template_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn is_valid_var_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn is_valid_var_value(value: &str) -> bool {
+    !value.chars().any(|c| c.is_ascii_control())
 }
 
 pub async fn template_index(
@@ -30,22 +42,58 @@ pub async fn template_index(
 pub async fn serve_kickstart(
     State(templates_dir): State<PathBuf>,
     Path(template): Path<String>,
+    Query(vars): Query<HashMap<String, String>>,
 ) -> Response {
-    serve_file(&templates_dir, &template, "kickstart").await
+    serve_file(&templates_dir, &template, "kickstart", vars).await
+}
+
+pub async fn serve_kickstart_with_vars(
+    State(templates_dir): State<PathBuf>,
+    Path((template, path_vars)): Path<(String, String)>,
+    Query(query_vars): Query<HashMap<String, String>>,
+) -> Response {
+    let Some(vars) = merge_vars(&path_vars, query_vars) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    serve_file(&templates_dir, &template, "kickstart", vars).await
 }
 
 pub async fn serve_user_data(
     State(templates_dir): State<PathBuf>,
     Path(template): Path<String>,
+    Query(vars): Query<HashMap<String, String>>,
 ) -> Response {
-    serve_file(&templates_dir, &template, "user-data").await
+    serve_file(&templates_dir, &template, "user-data", vars).await
+}
+
+pub async fn serve_user_data_with_vars(
+    State(templates_dir): State<PathBuf>,
+    Path((template, path_vars)): Path<(String, String)>,
+    Query(query_vars): Query<HashMap<String, String>>,
+) -> Response {
+    let Some(vars) = merge_vars(&path_vars, query_vars) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    serve_file(&templates_dir, &template, "user-data", vars).await
 }
 
 pub async fn serve_meta_data(
     State(templates_dir): State<PathBuf>,
     Path(template): Path<String>,
+    Query(vars): Query<HashMap<String, String>>,
 ) -> Response {
-    serve_file(&templates_dir, &template, "meta-data").await
+    serve_file(&templates_dir, &template, "meta-data", vars).await
+}
+
+pub async fn serve_meta_data_with_vars(
+    State(templates_dir): State<PathBuf>,
+    Path((template, path_vars)): Path<(String, String)>,
+    Query(query_vars): Query<HashMap<String, String>>,
+) -> Response {
+    let Some(vars) = merge_vars(&path_vars, query_vars) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    serve_file(&templates_dir, &template, "meta-data", vars).await
 }
 
 struct Resolved {
@@ -81,7 +129,40 @@ async fn resolve_template_dir(templates_dir: &FsPath, template: &str) -> Option<
     })
 }
 
-async fn serve_file(templates_dir: &FsPath, template: &str, filename: &str) -> Response {
+fn merge_vars(
+    path_vars: &str,
+    mut query_vars: HashMap<String, String>,
+) -> Option<HashMap<String, String>> {
+    for (key, value) in parse_path_vars(path_vars)? {
+        query_vars.entry(key).or_insert(value);
+    }
+    Some(query_vars)
+}
+
+fn parse_path_vars(path_vars: &str) -> Option<HashMap<String, String>> {
+    let mut vars = HashMap::new();
+    for pair in path_vars.split(';') {
+        let (key, value) = pair.split_once('=')?;
+        if !is_valid_var_name(key) {
+            return None;
+        }
+        vars.insert(key.to_string(), value.to_string());
+    }
+    Some(vars)
+}
+
+async fn serve_file(
+    templates_dir: &FsPath,
+    template: &str,
+    filename: &str,
+    vars: HashMap<String, String>,
+) -> Response {
+    if !vars.keys().all(|name| is_valid_var_name(name)) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if !vars.values().all(|value| is_valid_var_value(value)) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let Some(resolved) = resolve_template_dir(templates_dir, template).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -114,12 +195,55 @@ async fn serve_file(templates_dir: &FsPath, template: &str, filename: &str) -> R
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
+    let body = if vars.is_empty() {
+        body
+    } else {
+        render_template(body, &vars)
+    };
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         body,
     )
         .into_response()
+}
+
+fn render_template(body: Vec<u8>, vars: &HashMap<String, String>) -> Vec<u8> {
+    let body = match String::from_utf8(body) {
+        Ok(body) => body,
+        Err(e) => {
+            tracing::warn!("template body is not UTF-8; serving without variable substitution");
+            return e.into_bytes();
+        }
+    };
+    let mut rendered = String::with_capacity(body.len());
+    let mut rest = body.as_str();
+    while let Some(start) = rest.find("{{") {
+        rendered.push_str(&rest[..start]);
+        let after_start = &rest[start + 2..];
+        let Some(end) = after_start.find("}}") else {
+            rendered.push_str(&rest[start..]);
+            return rendered.into_bytes();
+        };
+        let name = &after_start[..end];
+        if is_valid_var_name(name) {
+            match vars.get(name) {
+                Some(value) => rendered.push_str(value),
+                None => {
+                    rendered.push_str("{{");
+                    rendered.push_str(name);
+                    rendered.push_str("}}");
+                }
+            }
+        } else {
+            rendered.push_str("{{");
+            rendered.push_str(name);
+            rendered.push_str("}}");
+        }
+        rest = &after_start[end + 2..];
+    }
+    rendered.push_str(rest);
+    rendered.into_bytes()
 }
 
 // The template name is already validated to [a-z0-9-]+, so no HTML escaping is required.
