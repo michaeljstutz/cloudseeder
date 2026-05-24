@@ -23,7 +23,9 @@ fn is_valid_var_name(name: &str) -> bool {
 }
 
 fn is_valid_var_value(value: &str) -> bool {
-    !value.chars().any(|c| c.is_ascii_control())
+    !value
+        .chars()
+        .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
 }
 
 pub fn is_valid_file_name(name: &str) -> bool {
@@ -67,7 +69,7 @@ impl std::fmt::Display for RenderError {
             RenderError::InvalidVarValue(name) => {
                 write!(
                     f,
-                    "invalid variable value for {name:?}: ASCII control characters are not allowed"
+                    "invalid variable value for {name:?}: control characters and Unicode line separators are not allowed"
                 )
             }
             RenderError::TemplateNotFound(template) => {

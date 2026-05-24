@@ -274,6 +274,23 @@ async fn rejects_newline_var_values() {
 }
 
 #[tokio::test]
+async fn rejects_unicode_line_separator_var_values() {
+    let server = server_with_templates().await;
+    write_template_file(&server, "ubuntu", "user-data", "hostname: {{h}}\n");
+
+    let resp = reqwest::get(format!(
+        "http://{}/{TEST_PREFIX}/ubuntu/user-data?h=node1%E2%80%A8runcmd:%20[echo%20hi]",
+        server.addr
+    ))
+    .await
+    .expect("request");
+
+    assert_eq!(resp.status(), 404);
+
+    let _ = server.shutdown.send(());
+}
+
+#[tokio::test]
 async fn query_vars_override_path_vars() {
     let server = server_with_templates().await;
     write_template_file(&server, "ubuntu", "user-data", "hostname: {{h}}\n");
