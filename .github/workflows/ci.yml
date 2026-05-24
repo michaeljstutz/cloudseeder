@@ -25,10 +25,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
         with:
+          version: 2026.5.4
           install: true
           cache: true
 
@@ -68,6 +71,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
@@ -94,10 +99,13 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install mise
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151  # v4.0.1
         with:
+          version: 2026.5.4
           install: true
           cache: true
 

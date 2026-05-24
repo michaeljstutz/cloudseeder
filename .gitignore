@@ -12,7 +12,6 @@ Cargo.lock.bak
 *.iml
 *.swp
 *.swo
-.DS_Store
 
 # Environment / secrets
 .env
@@ -24,4 +23,11 @@ Cargo.lock.bak
 *.log
 
 # OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
