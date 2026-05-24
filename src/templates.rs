@@ -26,6 +26,60 @@ fn is_valid_var_value(value: &str) -> bool {
     !value.chars().any(|c| c.is_ascii_control())
 }
 
+pub fn is_valid_file_name(name: &str) -> bool {
+    FILES.contains(&name)
+}
+
+pub fn validate_var(name: &str, value: &str) -> Result<(), RenderError> {
+    if !is_valid_var_name(name) {
+        return Err(RenderError::InvalidVarName(name.to_string()));
+    }
+    if !is_valid_var_value(value) {
+        return Err(RenderError::InvalidVarValue(name.to_string()));
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+pub enum RenderError {
+    InvalidTemplate(String),
+    InvalidFile(String),
+    InvalidVarName(String),
+    InvalidVarValue(String),
+    TemplateNotFound(String),
+    Io(std::io::Error),
+}
+
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RenderError::InvalidTemplate(template) => {
+                write!(f, "invalid template {template:?}: only [a-z0-9-] allowed")
+            }
+            RenderError::InvalidFile(file) => write!(
+                f,
+                "invalid file {file:?}: expected one of {}",
+                FILES.join(", ")
+            ),
+            RenderError::InvalidVarName(name) => {
+                write!(f, "invalid variable name {name:?}: only [a-z0-9-] allowed")
+            }
+            RenderError::InvalidVarValue(name) => {
+                write!(
+                    f,
+                    "invalid variable value for {name:?}: ASCII control characters are not allowed"
+                )
+            }
+            RenderError::TemplateNotFound(template) => {
+                write!(f, "template {template:?} not found")
+            }
+            RenderError::Io(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for RenderError {}
+
 pub async fn template_index(
     State(templates_dir): State<PathBuf>,
     Path(template): Path<String>,
@@ -157,14 +211,43 @@ async fn serve_file(
     filename: &str,
     vars: HashMap<String, String>,
 ) -> Response {
-    if !vars.keys().all(|name| is_valid_var_name(name)) {
-        return StatusCode::NOT_FOUND.into_response();
+    let body = match render_file(templates_dir, template, filename, vars).await {
+        Ok(body) => body,
+        Err(RenderError::InvalidTemplate(_))
+        | Err(RenderError::InvalidFile(_))
+        | Err(RenderError::InvalidVarName(_))
+        | Err(RenderError::InvalidVarValue(_))
+        | Err(RenderError::TemplateNotFound(_)) => return StatusCode::NOT_FOUND.into_response(),
+        Err(RenderError::Io(e)) => {
+            tracing::error!(error = %e, template, filename, "template render failed");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        body,
+    )
+        .into_response()
+}
+
+pub async fn render_file(
+    templates_dir: &FsPath,
+    template: &str,
+    filename: &str,
+    vars: HashMap<String, String>,
+) -> Result<Vec<u8>, RenderError> {
+    if !is_valid_template_name(template) {
+        return Err(RenderError::InvalidTemplate(template.to_string()));
     }
-    if !vars.values().all(|value| is_valid_var_value(value)) {
-        return StatusCode::NOT_FOUND.into_response();
+    if !is_valid_file_name(filename) {
+        return Err(RenderError::InvalidFile(filename.to_string()));
+    }
+    for (name, value) in &vars {
+        validate_var(name, value)?;
     }
     let Some(resolved) = resolve_template_dir(templates_dir, template).await else {
-        return StatusCode::NOT_FOUND.into_response();
+        return Err(RenderError::TemplateNotFound(template.to_string()));
     };
     let file_path = resolved.canonical_dir.join(filename);
     let body = match tokio::fs::canonicalize(&file_path).await {
@@ -184,7 +267,7 @@ async fn serve_file(
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
                     Err(e) => {
                         tracing::error!(error = %e, path = ?canonical_file, "template read failed");
-                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        return Err(RenderError::Io(e));
                     }
                 }
             }
@@ -192,20 +275,14 @@ async fn serve_file(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(e) => {
             tracing::error!(error = %e, path = ?file_path, "template canonicalize failed");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return Err(RenderError::Io(e));
         }
     };
-    let body = if vars.is_empty() {
+    Ok(if vars.is_empty() {
         body
     } else {
         render_template(body, &vars)
-    };
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-        body,
-    )
-        .into_response()
+    })
 }
 
 fn render_template(body: Vec<u8>, vars: &HashMap<String, String>) -> Vec<u8> {
