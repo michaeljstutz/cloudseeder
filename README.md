@@ -27,6 +27,7 @@ INFO cloudseeder: ready url=http://127.0.0.1:8080/qb10o0/
 cloudseeder --help            # usage
 cloudseeder --version         # version (matches Cargo.toml)
 cloudseeder --config ./my.toml
+cloudseeder --config ./my.toml render ubuntu user-data --var h=node1 --var id=10
 ```
 
 `--config <PATH>` and the `CLOUDSEEDER_CONFIG` env var are equivalent — the flag wins if both are given.
@@ -65,6 +66,15 @@ Requests for a file that doesn't exist inside an existing template folder return
 A worked example lives in [`examples/templates/example/`](./examples/templates/example) — point `templates_dir` at `examples/templates` and visit `/<prefix>/example/` to see the index.
 
 Files are served as `text/plain; charset=utf-8`. The index page at `/<prefix>/<template>/` is minimal HTML with three relative links — useful for confirming the server can see the template folder.
+
+To preview a rendered file without starting the HTTP server:
+
+```bash
+cloudseeder --config ./cloudseeder.toml render ubuntu user-data --var h=node1.example --var id=10
+```
+
+The render command uses the configured `templates_dir` and prints the rendered file to stdout. It applies the same template, file, variable-name, and control-character validation as HTTP serving.
+Like HTTP serving, rendering a missing file inside an existing template prints an empty body and exits successfully.
 
 ### Template variables
 

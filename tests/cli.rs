@@ -36,6 +36,87 @@ fn help_flag_lists_config_option() {
         stdout.contains("CLOUDSEEDER_CONFIG"),
         "help missing CLOUDSEEDER_CONFIG: {stdout}"
     );
+    assert!(stdout.contains("render"), "help missing render: {stdout}");
+}
+
+#[test]
+fn render_command_prints_rendered_template_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let templates_dir = dir.path().join("templates");
+    let template_dir = templates_dir.join("ubuntu");
+    std::fs::create_dir_all(&template_dir).unwrap();
+    std::fs::write(
+        template_dir.join("user-data"),
+        "hostname: {{h}}\ninstance-id: {{id}}\nmissing: {{missing}}\n",
+    )
+    .unwrap();
+    let config_path = dir.path().join("cloudseeder.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            "prefix = \"clitest\"\ntemplates_dir = \"{}\"\n",
+            templates_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(BIN)
+        .arg("--config")
+        .arg(&config_path)
+        .args([
+            "render",
+            "ubuntu",
+            "user-data",
+            "--var",
+            "h=node1.example",
+            "--var",
+            "id=10",
+        ])
+        .output()
+        .expect("spawn");
+
+    assert!(
+        output.status.success(),
+        "non-zero exit: {:?}\nstderr: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hostname: node1.example\ninstance-id: 10\nmissing: {{missing}}\n"
+    );
+}
+
+#[test]
+fn render_command_rejects_invalid_var_argument() {
+    let output = Command::new(BIN)
+        .args(["render", "ubuntu", "user-data", "--var", "not-a-pair"])
+        .output()
+        .expect("spawn");
+
+    assert!(!output.status.success(), "binary should exit non-zero");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("expected KEY=VALUE"),
+        "stderr missing var error: {stderr}"
+    );
+}
+
+#[test]
+fn render_command_rejects_invalid_var_name() {
+    let output = Command::new(BIN)
+        .args(["render", "ubuntu", "user-data", "--var", "Bad=x"])
+        .output()
+        .expect("spawn");
+
+    assert!(!output.status.success(), "binary should exit non-zero");
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid variable name"),
+        "stderr missing var-name error: {stderr}"
+    );
 }
 
 #[test]
