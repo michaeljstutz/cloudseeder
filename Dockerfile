@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1.95-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1 AS builder
+FROM rust:1.97-bookworm@sha256:0e2bcaef56d041a486784e54104a81aebe0da44bd03019bd70bc0401e42e4a97 AS builder
 WORKDIR /build
 
 COPY Cargo.toml Cargo.lock ./
@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/build/target \
     cargo build --release --locked \
     && cp target/release/cloudseeder /usr/local/bin/cloudseeder
 
-FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb AS runtime
+FROM debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716 AS runtime
 # Debian point releases can retire exact package versions; keep the base image
 # digest-pinned and let security updates resolve from the current bookworm repo.
 # hadolint ignore=DL3008
