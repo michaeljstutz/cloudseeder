@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/build/target \
     cargo build --release --locked \
     && cp target/release/cloudseeder /usr/local/bin/cloudseeder
 
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS runtime
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
 # Debian point releases can retire exact package versions; keep the base image
 # digest-pinned and let security updates resolve from the current bookworm repo.
 # hadolint ignore=DL3008
