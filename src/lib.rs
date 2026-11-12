@@ -59,8 +59,10 @@ async fn unauthorized() -> impl IntoResponse {
 }
 
 pub async fn serve(addr: SocketAddr, prefix: &str, templates_dir: PathBuf) -> std::io::Result<()> {
+    // Register SIGTERM before the listening socket becomes observable.
+    let shutdown = shutdown_signal();
     let listener = TcpListener::bind(addr).await?;
-    serve_with_shutdown(listener, prefix, templates_dir, shutdown_signal()).await
+    serve_with_shutdown(listener, prefix, templates_dir, shutdown).await
 }
 
 pub async fn serve_with_shutdown<F>(
@@ -79,7 +81,7 @@ where
         .await
 }
 
-async fn shutdown_signal() {
+fn shutdown_signal() -> impl std::future::Future<Output = ()> {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -87,18 +89,21 @@ async fn shutdown_signal() {
     };
 
     #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
+    let mut terminate = signal::unix::signal(signal::unix::SignalKind::terminate())
+        .expect("failed to install SIGTERM handler");
+
+    #[cfg(unix)]
+    let terminate = async move {
+        terminate.recv().await;
     };
 
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
-    tokio::select! {
-        _ = ctrl_c => tracing::info!("received Ctrl+C, shutting down"),
-        _ = terminate => tracing::info!("received SIGTERM, shutting down"),
+    async move {
+        tokio::select! {
+            _ = ctrl_c => tracing::info!("received Ctrl+C, shutting down"),
+            _ = terminate => tracing::info!("received SIGTERM, shutting down"),
+        }
     }
 }

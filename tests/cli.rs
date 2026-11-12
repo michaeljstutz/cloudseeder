@@ -152,57 +152,60 @@ fn pick_free_port() -> u16 {
 #[cfg(unix)]
 #[test]
 fn binary_starts_and_shuts_down_on_sigterm() {
-    let dir = tempfile::tempdir().unwrap();
-    let config_path = dir.path().join("cloudseeder.toml");
-    let port = pick_free_port();
-    std::fs::write(
-        &config_path,
-        format!("addr = \"127.0.0.1:{port}\"\nprefix = \"clitest\"\n"),
-    )
-    .unwrap();
+    for _ in 0..20 {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("cloudseeder.toml");
+        let port = pick_free_port();
+        std::fs::write(
+            &config_path,
+            format!("addr = \"127.0.0.1:{port}\"\nprefix = \"clitest\"\n"),
+        )
+        .unwrap();
 
-    let mut child = Command::new(BIN)
-        .arg("--config")
-        .arg(&config_path)
-        .env("RUST_LOG", "error")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn");
+        let mut child = Command::new(BIN)
+            .arg("--config")
+            .arg(&config_path)
+            .env("RUST_LOG", "error")
+            .env("TOKIO_WORKER_THREADS", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn");
 
-    // Poll the port until the server accepts connections.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while TcpStream::connect(("127.0.0.1", port)).is_err() {
-        if Instant::now() > deadline {
-            let _ = child.kill();
-            panic!("server did not start within 5s");
+        // Poll the port until the server accepts connections.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while TcpStream::connect(("127.0.0.1", port)).is_err() {
+            if Instant::now() > deadline {
+                let _ = child.kill();
+                panic!("server did not start within 5s");
+            }
+            std::thread::yield_now();
         }
-        std::thread::sleep(Duration::from_millis(50));
-    }
 
-    // SIGTERM via shell-out to avoid pulling in libc.
-    let kill_status = Command::new("kill")
-        .args(["-TERM", &child.id().to_string()])
-        .status()
-        .expect("spawn kill");
-    assert!(kill_status.success(), "kill failed: {kill_status:?}");
+        // SIGTERM via shell-out to avoid pulling in libc.
+        let kill_status = Command::new("kill")
+            .args(["-TERM", &child.id().to_string()])
+            .status()
+            .expect("spawn kill");
+        assert!(kill_status.success(), "kill failed: {kill_status:?}");
 
-    // Poll for child exit. std::process::Child has no built-in timed wait.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                assert!(status.success(), "non-zero exit after SIGTERM: {status:?}");
-                return;
-            }
-            Ok(None) => {
-                if Instant::now() > deadline {
-                    let _ = child.kill();
-                    panic!("child did not exit within 5s after SIGTERM");
+        // Poll for child exit. std::process::Child has no built-in timed wait.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    assert!(status.success(), "non-zero exit after SIGTERM: {status:?}");
+                    break;
                 }
-                std::thread::sleep(Duration::from_millis(50));
+                Ok(None) => {
+                    if Instant::now() > deadline {
+                        let _ = child.kill();
+                        panic!("child did not exit within 5s after SIGTERM");
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => panic!("wait failed: {e}"),
             }
-            Err(e) => panic!("wait failed: {e}"),
         }
     }
 }
